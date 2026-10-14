@@ -21,7 +21,7 @@ import {
 
 interface DebtorLedgerViewProps {
   record: MonthlyRecord;
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   initialFilter?: 'ALL' | 'GOV' | 'EXT' | 'OVERDUE';
   onUpdateRecord: (updatedRecord: MonthlyRecord) => void;
   onResetToOfficial: () => void;
@@ -126,8 +126,8 @@ export const DebtorLedgerView: React.FC<DebtorLedgerViewProps> = ({
 
   // Delete item
   const handleDeleteItem = (id: string, name: string) => {
-    if (!currentUser.canEditDebts) {
-      alert('คุณไม่มีสิทธิ์ในการลบรายการลูกหนี้ (ต้องการสิทธิ์ เจ้าหน้าที่การเงิน หรือ Super Admin)');
+    if (!currentUser?.canEditDebts) {
+      alert('คุณยังไม่ได้เข้าสู่ระบบ หรือไม่มีสิทธิ์ในการลบรายการลูกหนี้ (ต้องการสิทธิ์ เจ้าหน้าที่การเงิน หรือ Super Admin)');
       return;
     }
     if (window.confirm(`ยืนยันการลบรายการ: "${name}" ใช่หรือไม่?`)) {
@@ -139,8 +139,8 @@ export const DebtorLedgerView: React.FC<DebtorLedgerViewProps> = ({
 
   // Commit changes to Database
   const handleCommitToDatabase = () => {
-    if (!currentUser.canEditDebts) {
-      alert('คุณไม่มีสิทธิ์บันทึกการแก้ไข (กรุณาเข้าสู่ระบบด้วยสิทธิ์เจ้าหน้าที่การเงิน)');
+    if (!currentUser?.canEditDebts) {
+      alert('คุณยังไม่ได้เข้าสู่ระบบ หรือไม่มีสิทธิ์บันทึกการแก้ไข (กรุณาเข้าสู่ระบบด้วยสิทธิ์เจ้าหน้าที่การเงิน)');
       return;
     }
 
@@ -193,7 +193,7 @@ export const DebtorLedgerView: React.FC<DebtorLedgerViewProps> = ({
           </div>
 
           {/* Add New Right Item */}
-          {currentUser.canEditDebts && (
+          {currentUser?.canEditDebts && (
             <button
               onClick={() => {
                 setIsAddingNew(true);
@@ -222,12 +222,12 @@ export const DebtorLedgerView: React.FC<DebtorLedgerViewProps> = ({
           {/* Save to DB */}
           <button
             onClick={handleCommitToDatabase}
-            disabled={!currentUser.canEditDebts}
+            disabled={!currentUser?.canEditDebts}
             className={`px-4 py-2 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition-all ${
               hasUnsavedChanges
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
                 : 'bg-emerald-800 hover:bg-emerald-900 text-white'
-            } ${!currentUser.canEditDebts ? 'opacity-50 cursor-not-allowed' : ''}`}
+            } ${!currentUser?.canEditDebts ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Save className="w-3.5 h-3.5" />
             {hasUnsavedChanges ? 'บันทึกเข้าฐานข้อมูล (มีรายการแก้ไข)' : 'บันทึกเก็บเข้าฐานข้อมูล'}
@@ -444,7 +444,7 @@ export const DebtorLedgerView: React.FC<DebtorLedgerViewProps> = ({
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          {currentUser.canManageUsers && (
+                          {currentUser?.canManageUsers && (
                             <button
                               onClick={() => handleDeleteItem(item.id, item.name)}
                               title="ลบรายการ"

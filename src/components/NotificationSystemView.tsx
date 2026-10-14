@@ -19,7 +19,7 @@ import {
 
 interface NotificationSystemViewProps {
   record: MonthlyRecord;
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   settings: NotificationSettings;
   logs: NotificationLog[];
   onUpdateSettings: (settings: NotificationSettings) => void;

@@ -60,9 +60,9 @@ export default function App() {
   const [ledgerInitialFilter, setLedgerInitialFilter] = useState<'ALL' | 'GOV' | 'EXT' | 'OVERDUE'>('ALL');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalTab, setAuthModalTab] = useState<'LOGIN' | 'REGISTER' | 'FAST_SWITCH'>('LOGIN');
+  const [authModalTab, setAuthModalTab] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
 
-  const openAuthModal = (tab: 'LOGIN' | 'REGISTER' | 'FAST_SWITCH' = 'LOGIN') => {
+  const openAuthModal = (tab: 'LOGIN' | 'REGISTER' = 'LOGIN') => {
     setAuthModalTab(tab);
     setIsAuthModalOpen(true);
   };
@@ -100,18 +100,43 @@ export default function App() {
     const saved = localStorage.getItem('skb_users');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: UserProfile[] = JSON.parse(saved);
+        // ลบผู้ใช้งานทดสอบออก (usr-1, usr-2, usr-3, usr-4 หรือ username ลงท้ายด้วย _skb)
+        const cleaned = parsed.filter(
+          (u) =>
+            !['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id) &&
+            !u.username?.endsWith('_skb') &&
+            !u.id?.startsWith('usr-1') &&
+            !u.id?.startsWith('usr-2') &&
+            !u.id?.startsWith('usr-3') &&
+            !u.id?.startsWith('usr-4')
+        );
+        localStorage.setItem('skb_users', JSON.stringify(cleaned));
+        return cleaned;
       } catch {
-        return INITIAL_USERS;
+        return [];
       }
     }
-    return INITIAL_USERS;
+    return [];
   });
 
-  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     const savedId = localStorage.getItem('skb_current_user_id');
-    const matched = users.find((u) => u.id === savedId);
-    return matched || users[2]; // Default to Accountant (น.ส.สุดลัดดา จันทวุฒิ) for easy editing
+    if (['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(savedId || '')) {
+      localStorage.removeItem('skb_current_user_id');
+      return null;
+    }
+    const savedUsers = localStorage.getItem('skb_users');
+    if (savedUsers) {
+      try {
+        const parsed: UserProfile[] = JSON.parse(savedUsers);
+        const matched = parsed.find(
+          (u) => u.id === savedId && !['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id)
+        );
+        if (matched) return matched;
+      } catch {}
+    }
+    return null;
   });
 
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>(() => {
@@ -169,10 +194,24 @@ export default function App() {
     // Sync registered staff accounts from Cloud Firestore
     loadUsersFromFirestore().then((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
+        // Exclude mock test users
+        const validUsers = cloudUsers.filter(
+          (u) =>
+            !['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id) &&
+            !u.username?.endsWith('_skb') &&
+            !u.id?.startsWith('usr-1') &&
+            !u.id?.startsWith('usr-2') &&
+            !u.id?.startsWith('usr-3') &&
+            !u.id?.startsWith('usr-4')
+        );
         setUsers((prev) => {
           const map = new Map<string, UserProfile>();
-          prev.forEach((u) => map.set(u.id, u));
-          cloudUsers.forEach((u) => map.set(u.id, u));
+          prev.forEach((u) => {
+            if (!['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id)) {
+              map.set(u.id, u);
+            }
+          });
+          validUsers.forEach((u) => map.set(u.id, u));
           const merged = Array.from(map.values());
           localStorage.setItem('skb_users', JSON.stringify(merged));
           return merged;
@@ -209,9 +248,8 @@ export default function App() {
 
   const handleLogout = async () => {
     await logoutUser();
-    const fallbackUser = users[2] || users[0] || INITIAL_USERS[2];
-    setCurrentUser(fallbackUser);
-    localStorage.setItem('skb_current_user_id', fallbackUser.id);
+    setCurrentUser(null);
+    localStorage.removeItem('skb_current_user_id');
   };
 
   const handleLoginSuccess = (user: UserProfile) => {
@@ -244,8 +282,8 @@ export default function App() {
 
   const handleResetDatabase = () => {
     setRecord(INITIAL_MONTHLY_RECORD);
-    setUsers(INITIAL_USERS);
-    setCurrentUser(INITIAL_USERS[2]);
+    setUsers([]);
+    setCurrentUser(null);
     setNotifSettings(INITIAL_NOTIFICATION_SETTINGS);
     setNotifLogs(INITIAL_NOTIFICATION_LOGS);
     localStorage.removeItem('skb_monthly_record');
@@ -407,37 +445,56 @@ export default function App() {
 
             {/* User Profile & Auth Trigger */}
             <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800">
-              <button
-                onClick={() => openAuthModal('LOGIN')}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                title="คลิกเพื่อเข้าสู่ระบบ หรือ สมัครสมาชิกเจ้าหน้าที่ใหม่"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>เข้าสู่ระบบ / สมัครสมาชิก</span>
-              </button>
-
-              <button
-                onClick={() => openAuthModal('FAST_SWITCH')}
-                className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs text-left transition-colors cursor-pointer group"
-                title="คลิกเพื่อสลับผู้ใช้งาน หรือดูโปรไฟล์"
-              >
-                <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-[11px] shrink-0 group-hover:ring-2 group-hover:ring-emerald-500/30">
-                  {currentUser.name.charAt(0)}
-                </div>
-                <div className="leading-tight">
-                  <div className="flex items-center gap-1">
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[110px]">
-                      {currentUser.name}
-                    </span>
-                    <span className="text-[10px] px-1 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                      {currentUser.role}
-                    </span>
+              {currentUser ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-750 text-xs text-left">
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0 shadow-2xs">
+                      {currentUser.name.charAt(0)}
+                    </div>
+                    <div className="leading-tight">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[120px]">
+                          {currentUser.name}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                          {currentUser.role}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block line-clamp-1">
+                        {currentUser.roleTitleTh}
+                      </span>
+                    </div>
                   </div>
-                  <span className="text-[10px] text-slate-400 block line-clamp-1">
-                    {currentUser.roleTitleTh}
-                  </span>
+
+                  <button
+                    onClick={handleLogout}
+                    title="ออกจากระบบ"
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
                 </div>
-              </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openAuthModal('LOGIN')}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="เข้าสู่ระบบ"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-slate-500" />
+                    <span>เข้าสู่ระบบ</span>
+                  </button>
+
+                  <button
+                    onClick={() => openAuthModal('REGISTER')}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="สมัครสมาชิกใหม่"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>สมัครสมาชิกใหม่</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -509,47 +566,49 @@ export default function App() {
 
             {/* Mobile Auth Buttons */}
             <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
-                <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                  {currentUser.roleTitleTh}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    openAuthModal('LOGIN');
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs shadow-2xs"
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  เข้าสู่ระบบ
-                </button>
-                <button
-                  onClick={() => {
-                    openAuthModal('REGISTER');
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center gap-1.5 text-xs"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  สมัครสมาชิก
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  openAuthModal('FAST_SWITCH');
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full text-left px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>สลับบทบาทจำลอง (Fast Switch)</span>
-                </span>
-                <span className="text-[10px] text-slate-400">4 บัญชี</span>
-              </button>
+              {currentUser ? (
+                <div className="space-y-2">
+                  <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
+                    <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                      {currentUser.roleTitleTh}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full text-center py-2 px-3 rounded-lg font-semibold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    ออกจากระบบ
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      openAuthModal('LOGIN');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full text-center py-2 px-2.5 rounded-lg font-semibold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 text-xs shadow-2xs cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    เข้าสู่ระบบ
+                  </button>
+                  <button
+                    onClick={() => {
+                      openAuthModal('REGISTER');
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-1.5 text-xs shadow-2xs cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    สมัครสมาชิก
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Mobile Dark Mode Toggle */}
@@ -638,7 +697,6 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
         onLogout={handleLogout}
         currentUser={currentUser}
-        initialUsers={users}
         initialTab={authModalTab}
       />
 

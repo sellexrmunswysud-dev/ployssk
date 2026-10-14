@@ -23,7 +23,7 @@ import {
 
 interface RBACManagementViewProps {
   users: UserProfile[];
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   record: MonthlyRecord;
   onSwitchUser: (user: UserProfile) => void;
   onUpdateUsers: (users: UserProfile[]) => void;
@@ -89,15 +89,13 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
   };
 
   const handleDeleteUser = (userId: string, userName: string) => {
-    if (users.length <= 1) {
-      alert('ไม่สามารถลบผู้ใช้คนสุดท้ายของระบบได้');
-      return;
-    }
     if (window.confirm(`ยืนยันการลบผู้ใช้: ${userName}?`)) {
       const nextUsers = users.filter((u) => u.id !== userId);
       onUpdateUsers(nextUsers);
-      if (currentUser.id === userId && nextUsers.length > 0) {
-        onSwitchUser(nextUsers[0]);
+      if (currentUser?.id === userId) {
+        if (nextUsers.length > 0) {
+          onSwitchUser(nextUsers[0]);
+        }
       }
     }
   };
@@ -167,7 +165,7 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {currentUser.canManageUsers && (
+          {currentUser?.canManageUsers && (
             <button
               onClick={() => {
                 setIsAddMode(true);
@@ -222,58 +220,86 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
               เข้าสู่ระบบในฐานะ (Active User Role Switcher)
             </h3>
             <p className="text-xs text-slate-500">
-              คลิกเพื่อสลับผู้ใช้งานจำลองและทดสอบสิทธิ์การทำงานตามบทบาทจริงของโรงพยาบาล
+              คลิกเพื่อสลับบทบาทผู้ใช้งานที่ลงทะเบียนไว้ในระบบ
             </p>
           </div>
           <div className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
             <span>ผู้ใช้ปัจจุบัน:</span>
             <span className="font-bold text-emerald-700 dark:text-emerald-400">
-              {currentUser.name} ({ROLE_CONFIGS[currentUser.role]?.title})
+              {currentUser
+                ? `${currentUser.name} (${ROLE_CONFIGS[currentUser.role]?.title || currentUser.roleTitleTh || currentUser.role})`
+                : 'ยังไม่ได้เข้าสู่ระบบ'}
             </span>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {users.map((user) => {
-            const isCurrent = currentUser.id === user.id;
-            const roleInfo = ROLE_CONFIGS[user.role];
-            return (
+        {users.length === 0 ? (
+          <div className="mt-4 p-6 sm:p-8 rounded-xl bg-white dark:bg-slate-900 border border-dashed border-emerald-300 dark:border-emerald-800 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto mb-3">
+              <Users className="w-6 h-6" />
+            </div>
+            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+              ยังไม่มีรายชื่อผู้ใช้งานในระบบ (ลบผู้ใช้ทดสอบออกเรียบร้อยแล้ว)
+            </h4>
+            <p className="text-xs text-slate-500 mt-1.5 max-w-md mx-auto">
+              ระบบเชื่อมต่อกับ Cloud Firestore (ploy-d797f) พร้อมใช้งาน กรุณากดปุ่มด้านล่างเพื่อสมัครสมาชิกเจ้าหน้าที่บัญชีแรก
+            </p>
+            {onOpenRegisterModal && (
               <button
-                key={user.id}
-                onClick={() => onSwitchUser(user)}
-                className={`p-3.5 rounded-xl text-left transition-all border ${
-                  isCurrent
-                    ? 'bg-white dark:bg-slate-900 border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
-                    : 'bg-white/60 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
+                onClick={onOpenRegisterModal}
+                className="mt-4 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs inline-flex items-center gap-2 cursor-pointer transition-all"
               >
-                <div className="flex items-center justify-between">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleInfo.color}`}>
-                    {user.role}
-                  </span>
-                  {isCurrent && (
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <Check className="w-3.5 h-3.5" />
-                      ใช้งานอยู่
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-2">
-                  <div className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
-                    {user.name}
-                  </div>
-                  <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
-                    {user.roleTitleTh}
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-1 line-clamp-1">
-                    {user.department}
-                  </div>
-                </div>
+                <UserPlus className="w-4 h-4" />
+                สมัครสมาชิกเจ้าหน้าที่ใหม่ทันที
               </button>
-            );
-          })}
-        </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {users.map((user) => {
+              const isCurrent = currentUser?.id === user.id;
+              const roleInfo = ROLE_CONFIGS[user.role] || {
+                title: user.roleTitleTh || user.role,
+                color: 'bg-emerald-100 text-emerald-800',
+              };
+              return (
+                <button
+                  key={user.id}
+                  onClick={() => onSwitchUser(user)}
+                  className={`p-3.5 rounded-xl text-left transition-all border cursor-pointer ${
+                    isCurrent
+                      ? 'bg-white dark:bg-slate-900 border-emerald-500 shadow-sm ring-2 ring-emerald-500/20'
+                      : 'bg-white/60 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleInfo.color}`}>
+                      {user.role}
+                    </span>
+                    {isCurrent && (
+                      <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        <Check className="w-3.5 h-3.5" />
+                        ใช้งานอยู่
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
+                      {user.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                      {user.roleTitleTh}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 line-clamp-1">
+                      {user.department}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* User Directory Table */}
@@ -309,73 +335,81 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                  <td className="py-3 px-3">
-                    <div className="font-bold text-slate-900 dark:text-slate-100">
-                      {user.name}
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      {user.roleTitleTh} · ({user.phone})
-                    </div>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ROLE_CONFIGS[user.role]?.color}`}>
-                      {ROLE_CONFIGS[user.role]?.title}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-slate-600 dark:text-slate-400 text-[11px]">
-                    {user.department}
-                  </td>
-                  <td className="py-3 px-3">
-                    <div className="flex flex-wrap gap-1.5 text-[10px]">
-                      {user.canEditDebts && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                          แก้ไขลูกหนี้
-                        </span>
-                      )}
-                      {user.canReview && (
-                        <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                          ตรวจสอบเวชสถิติ
-                        </span>
-                      )}
-                      {user.canApprove && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          รับรองรายงาน
-                        </span>
-                      )}
-                      {user.canManageUsers && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                          จัดการผู้ใช้/สำรองข้อมูล
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => {
-                          setIsAddMode(false);
-                          setEditingUser({ ...user });
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
-                        title="แก้ไขข้อมูลผู้ใช้"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      {currentUser.canManageUsers && users.length > 1 && (
-                        <button
-                          onClick={() => handleDeleteUser(user.id, user.name)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
-                          title="ลบผู้ใช้"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-slate-400 dark:text-slate-500">
+                    ยังไม่มีรายชื่อผู้ใช้งานในระบบ (ลบผู้ใช้ทดสอบออกแล้ว) — กรุณากดปุ่ม &quot;สมัครสมาชิกใหม่&quot; เพื่อลงทะเบียน
                   </td>
                 </tr>
-              ))}
+              ) : (
+                users.map((user) => (
+                  <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-slate-900 dark:text-slate-100">
+                        {user.name}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {user.roleTitleTh} · ({user.phone})
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ROLE_CONFIGS[user.role]?.color}`}>
+                        {ROLE_CONFIGS[user.role]?.title}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-slate-600 dark:text-slate-400 text-[11px]">
+                      {user.department}
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="flex flex-wrap gap-1.5 text-[10px]">
+                        {user.canEditDebts && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            แก้ไขลูกหนี้
+                          </span>
+                        )}
+                        {user.canReview && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            ตรวจสอบเวชสถิติ
+                          </span>
+                        )}
+                        {user.canApprove && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                            รับรองรายงาน
+                          </span>
+                        )}
+                        {user.canManageUsers && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            จัดการผู้ใช้/สำรองข้อมูล
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            setIsAddMode(false);
+                            setEditingUser({ ...user });
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+                          title="แก้ไขข้อมูลผู้ใช้"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        {(currentUser?.canManageUsers || users.length > 0) && (
+                          <button
+                            onClick={() => handleDeleteUser(user.id, user.name)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
+                            title="ลบผู้ใช้"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

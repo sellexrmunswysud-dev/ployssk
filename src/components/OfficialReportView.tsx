@@ -16,7 +16,7 @@ import {
 
 interface OfficialReportViewProps {
   record: MonthlyRecord;
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   onUpdateRecord: (updatedRecord: MonthlyRecord) => void;
 }
 
@@ -122,7 +122,7 @@ export const OfficialReportView: React.FC<OfficialReportViewProps> = ({
             ส่งออก Excel (.xls)
           </button>
 
-          {currentUser.canApprove && !isApproverSigned && (
+          {currentUser?.canApprove && !isApproverSigned && (
             <button
               onClick={handleExecutiveApprove}
               className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"

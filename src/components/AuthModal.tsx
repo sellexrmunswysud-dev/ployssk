@@ -22,13 +22,11 @@ import {
   LogIn,
   UserPlus,
   RefreshCw,
-  Zap,
-  ArrowRight,
   LogOut,
   Database,
-  ExternalLink,
   Eye,
-  EyeOff
+  EyeOff,
+  ArrowRight
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -36,9 +34,8 @@ interface AuthModalProps {
   onClose: () => void;
   onLoginSuccess: (user: UserProfile) => void;
   onLogout?: () => void;
-  currentUser?: UserProfile;
-  initialUsers: UserProfile[];
-  initialTab?: 'LOGIN' | 'REGISTER' | 'FAST_SWITCH';
+  currentUser?: UserProfile | null;
+  initialTab?: 'LOGIN' | 'REGISTER';
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -47,10 +44,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onLoginSuccess,
   onLogout,
   currentUser,
-  initialUsers,
   initialTab = 'LOGIN',
 }) => {
-  const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER' | 'FAST_SWITCH'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER'>(initialTab);
 
   // Login Form
   const [loginEmail, setLoginEmail] = useState('');
@@ -145,11 +141,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
     } else if (res.error) {
       if (res.error.includes('user-not-found') || res.error.includes('invalid-credential')) {
-        setErrorMsg('ไม่พบบัญชีผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (หากยังไม่มีบัญชี สามารถกด "สมัครสมาชิกใหม่" ได้ทันที)');
+        setErrorMsg('ไม่พบบัญชีผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (หากยังไม่มีบัญชี สามารถกดแท็บ "สมัครสมาชิกใหม่" ด้านบนได้ทันที)');
       } else if (res.error.includes('wrong-password')) {
         setErrorMsg('รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
       } else if (res.error.includes('operation-not-allowed')) {
-        setErrorMsg('Email/Password Provider ยังไม่ได้เปิดใน Firebase Console คุณสามารถใช้ Google Sign-In หรือแท็บ "เข้าใช้งานด่วนตามตำแหน่ง" ได้ทันที');
+        setErrorMsg('Email/Password Provider ยังไม่ได้เปิดใช้งานใน Firebase Console กรุณาใช้ปุ่ม Google Sign-In หรือเปิดใช้งานใน Firebase Authentication');
       } else {
         setErrorMsg(res.error);
       }
@@ -163,6 +159,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setErrorMsg('กรุณากรอกชื่อ-นามสกุล, อีเมล และรหัสผ่านให้ครบถ้วน');
       return;
     }
+
     if (regPass.length < 6) {
       setErrorMsg('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
       return;
@@ -217,12 +214,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Fast switch to official hospital account
-  const handleFastLogin = (user: UserProfile) => {
-    onLoginSuccess(user);
-    onClose();
-  };
-
   // Logout action
   const handleSignOut = async () => {
     setIsLoading(true);
@@ -259,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -282,7 +273,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               onClick={handleSignOut}
               disabled={isLoading}
-              className="text-[11px] text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 shrink-0 font-medium ml-2 px-2 py-1 rounded-md hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              className="text-[11px] text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 shrink-0 font-medium ml-2 px-2 py-1 rounded-md hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
             >
               <LogOut className="w-3 h-3" />
               ออกจากระบบ
@@ -290,20 +281,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs (Only 2 Tabs: Login & Register - Fast Switch removed per user request) */}
         <div className="flex border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-xs shrink-0">
           <button
             onClick={() => {
               setActiveTab('LOGIN');
               setErrorMsg(null);
             }}
-            className={`flex-1 py-2.5 font-semibold text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 font-semibold text-center border-b-2 transition-colors flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'LOGIN'
-                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900 shadow-2xs'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
-            <LogIn className="w-3.5 h-3.5" />
+            <LogIn className="w-4 h-4" />
             เข้าสู่ระบบ
           </button>
           <button
@@ -311,28 +302,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               setActiveTab('REGISTER');
               setErrorMsg(null);
             }}
-            className={`flex-1 py-2.5 font-semibold text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 font-semibold text-center border-b-2 transition-colors flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'REGISTER'
-                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900'
+                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900 shadow-2xs'
                 : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
             }`}
           >
-            <UserPlus className="w-3.5 h-3.5" />
+            <UserPlus className="w-4 h-4" />
             สมัครสมาชิกใหม่
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('FAST_SWITCH');
-              setErrorMsg(null);
-            }}
-            className={`flex-1 py-2.5 font-semibold text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-              activeTab === 'FAST_SWITCH'
-                ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-white dark:bg-slate-900'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            เข้าใช้งานด่วน
           </button>
         </div>
 
@@ -348,21 +325,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           {successMsg && (
-            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-              <span className="text-[11px]">{successMsg}</span>
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-medium text-[11px]">{successMsg}</span>
             </div>
           )}
 
           {/* TAB 1: LOGIN */}
           {activeTab === 'LOGIN' && (
-            <form onSubmit={handleEmailLogin} className="space-y-3.5">
-              {/* Google Button */}
+            <div className="space-y-4">
+              {/* Google Sign-in Option */}
               <button
                 type="button"
                 onClick={handleGoogleLogin}
                 disabled={isLoading}
-                className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition-all font-semibold flex items-center justify-center gap-2 shadow-2xs hover:border-slate-300"
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2.5 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -382,118 +359,138 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                เข้าสู่ระบบด้วย Google Account
+                <span>เข้าสู่ระบบด้วย Google Account</span>
               </button>
 
-              <div className="flex items-center gap-3 my-2 text-slate-400">
-                <span className="flex-1 border-b border-slate-200 dark:border-slate-800" />
-                <span className="text-[11px]">หรือใช้อีเมลและรหัสผ่าน</span>
-                <span className="flex-1 border-b border-slate-200 dark:border-slate-800" />
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-slate-200 dark:border-slate-800 w-full" />
+                <span className="bg-white dark:bg-slate-900 px-3 text-[11px] text-slate-400 uppercase tracking-wider absolute">
+                  หรือใช้อีเมลและรหัสผ่าน
+                </span>
               </div>
 
-              <div>
-                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">อีเมลเจ้าหน้าที่</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
-                  <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="name@skbhospital.go.th"
-                    className="w-full bg-transparent text-slate-900 dark:text-white focus:outline-hidden"
-                  />
+              {/* Email/Password Login Form */}
+              <form onSubmit={handleEmailLogin} className="space-y-3">
+                <div>
+                  <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">อีเมลผู้ใช้งาน</label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="email"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="เช่น staff@skbhospital.go.th"
+                      required
+                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 transition-colors"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">รหัสผ่าน</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
-                  <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                  <input
-                    type={showLoginPass ? 'text' : 'password'}
-                    value={loginPass}
-                    onChange={(e) => setLoginPass(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-transparent text-slate-900 dark:text-white focus:outline-hidden"
-                  />
+                <div>
+                  <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">รหัสผ่าน</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type={showLoginPass ? 'text' : 'password'}
+                      value={loginPass}
+                      onChange={(e) => setLoginPass(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full pl-9 pr-10 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPass(!showLoginPass)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold flex items-center justify-center gap-2 transition-all shadow-xs mt-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  เข้าสู่ระบบ
+                </button>
+              </form>
+
+              {/* Switch to Register tab */}
+              <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+                <p className="text-slate-500 text-[11px]">
+                  ยังไม่มีบัญชีเจ้าหน้าที่ในระบบ?{' '}
                   <button
                     type="button"
-                    onClick={() => setShowLoginPass(!showLoginPass)}
-                    className="text-slate-400 hover:text-slate-600"
+                    onClick={() => {
+                      setActiveTab('REGISTER');
+                      setErrorMsg(null);
+                    }}
+                    className="text-emerald-700 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-0.5 cursor-pointer ml-1"
                   >
-                    {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <span>สมัครสมาชิกใหม่</span>
+                    <ArrowRight className="w-3 h-3" />
                   </button>
-                </div>
+                </p>
               </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold flex items-center justify-center gap-2 transition-all shadow-xs mt-2 disabled:opacity-50"
-              >
-                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-                เข้าสู่ระบบ
-              </button>
-
-              <div className="pt-2 text-center">
-                <span className="text-slate-500 text-[11px]">ยังไม่มีบัญชีเจ้าหน้าที่? </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('REGISTER')}
-                  className="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold hover:underline"
-                >
-                  สมัครสมาชิกใหม่ที่นี่
-                </button>
-              </div>
-            </form>
+            </div>
           )}
 
           {/* TAB 2: REGISTER */}
           {activeTab === 'REGISTER' && (
             <form onSubmit={handleRegister} className="space-y-3">
               <div>
-                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">ชื่อ - นามสกุล (พร้อมคำนำหน้า)</label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500">
-                  <User className="w-4 h-4 text-slate-400 shrink-0" />
+                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">ชื่อ-สกุล เจ้าหน้าที่</label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
-                    placeholder="เช่น น.ส.วิภาดา รักษาสิทธิ์"
-                    className="w-full bg-transparent text-slate-900 dark:text-white focus:outline-hidden"
+                    placeholder="เช่น น.ส.สุดลัดดา จันทวุฒิ"
+                    required
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 transition-colors"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">อีเมลเจ้าหน้าที่</label>
+              <div>
+                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">อีเมล (ใช้เป็น Username เข้าระบบ)</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="email"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="email@skbhospital.go.th"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-500"
+                    placeholder="staff@skbhospital.go.th"
+                    required
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 transition-colors"
                   />
                 </div>
-                <div>
-                  <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">รหัสผ่าน (6 ตัวขึ้นไป)</label>
-                  <div className="flex items-center px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:border-emerald-500">
-                    <input
-                      type={showRegPass ? 'text' : 'password'}
-                      value={regPass}
-                      onChange={(e) => setRegPass(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-transparent text-slate-900 dark:text-white focus:outline-hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowRegPass(!showRegPass)}
-                      className="text-slate-400 hover:text-slate-600 ml-1"
-                    >
-                      {showRegPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
+              </div>
+
+              <div>
+                <label className="text-slate-600 dark:text-slate-300 block mb-1 font-medium">รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type={showRegPass ? 'text' : 'password'}
+                    value={regPass}
+                    onChange={(e) => setRegPass(e.target.value)}
+                    placeholder="กำหนดรหัสผ่านปลอดภัย"
+                    required
+                    minLength={6}
+                    className="w-full pl-9 pr-10 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:border-emerald-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPass(!showRegPass)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -545,44 +542,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold flex items-center justify-center gap-2 transition-all shadow-xs mt-2 disabled:opacity-50"
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold flex items-center justify-center gap-2 transition-all shadow-xs mt-2 disabled:opacity-50 cursor-pointer"
               >
                 {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                 ยืนยันลงทะเบียนเจ้าหน้าที่
               </button>
+
+              {/* Switch to Login tab */}
+              <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+                <p className="text-slate-500 text-[11px]">
+                  มีบัญชีอยู่แล้ว?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('LOGIN');
+                      setErrorMsg(null);
+                    }}
+                    className="text-emerald-700 dark:text-emerald-400 font-bold hover:underline inline-flex items-center gap-0.5 cursor-pointer ml-1"
+                  >
+                    <span>เข้าสู่ระบบ</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </p>
+              </div>
             </form>
-          )}
-
-          {/* TAB 3: FAST SWITCH */}
-          {activeTab === 'FAST_SWITCH' && (
-            <div className="space-y-2.5">
-              <p className="text-slate-500 text-[11px]">
-                เลือกตำแหน่งเจ้าหน้าที่ตามเอกสารจริงของ รพ.สังขละบุรี เพื่อทดสอบสิทธิ์ในแต่ละระดับ:
-              </p>
-
-              {initialUsers.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => handleFastLogin(u)}
-                  className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all text-left flex items-center justify-between group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-xs shrink-0">
-                      {u.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-700 dark:group-hover:text-emerald-300 truncate">
-                        {u.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        {u.roleTitleTh} · {u.department}
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-transform group-hover:translate-x-1 shrink-0 ml-2" />
-                </button>
-              ))}
-            </div>
           )}
 
           {/* Hosting & Database Connection Status Banner */}
