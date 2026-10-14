@@ -8,6 +8,7 @@ import {
   getDocFromServer,
   collection,
   getDocs,
+  deleteDoc,
   onSnapshot,
   Unsubscribe,
 } from 'firebase/firestore';
@@ -22,7 +23,7 @@ import {
   updateProfile,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { MonthlyRecord, UserProfile, UserRole } from '../types';
+import { MonthlyRecord, UserProfile, UserRole, SystemSecuritySettings } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export enum OperationType {
@@ -129,6 +130,37 @@ export async function loginWithEmail(email: string, pass: string): Promise<{ use
   }
 }
 
+export const DEFAULT_SECURITY_SETTINGS: SystemSecuritySettings = {
+  requireAdminApproval: true,
+  allowAutoApproveFirstAdmin: true,
+};
+
+export async function loadSecuritySettingsFromFirestore(): Promise<SystemSecuritySettings> {
+  const path = 'system/security_settings';
+  try {
+    const docRef = doc(db, 'system', 'security_settings');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as SystemSecuritySettings;
+    }
+    return DEFAULT_SECURITY_SETTINGS;
+  } catch {
+    return DEFAULT_SECURITY_SETTINGS;
+  }
+}
+
+export async function saveSecuritySettingsToFirestore(settings: SystemSecuritySettings): Promise<boolean> {
+  const path = 'system/security_settings';
+  try {
+    const docRef = doc(db, 'system', 'security_settings');
+    await setDoc(docRef, settings, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
+  }
+}
+
 export async function registerStaffWithEmail(
   email: string,
   pass: string,
@@ -137,8 +169,26 @@ export async function registerStaffWithEmail(
   department: string,
   roleTitleTh: string,
   phone: string
-): Promise<{ user: FirebaseUser | { uid: string; email: string; displayName?: string }; error?: string; isFallback?: boolean }> {
+): Promise<{
+  user: FirebaseUser | { uid: string; email: string; displayName?: string };
+  profile?: UserProfile;
+  isPendingApproval?: boolean;
+  error?: string;
+  isFallback?: boolean;
+}> {
   try {
+    // Check security settings and existing users
+    const settings = await loadSecuritySettingsFromFirestore();
+    const existingUsers = await loadUsersFromFirestore();
+    const approvedUsers = existingUsers.filter((u) => u.approvalStatus === 'APPROVED' || (u.active && !u.approvalStatus));
+
+    // First user in clean database becomes auto-approved Admin
+    const isFirstUser = approvedUsers.length === 0;
+    const shouldRequireApproval = settings.requireAdminApproval && !isFirstUser;
+
+    const assignedRole: UserRole = isFirstUser ? 'ADMIN' : role;
+    const assignedRoleTitleTh = isFirstUser ? 'ผู้ดูแลระบบไอที (Super Admin บัญชีหลัก)' : roleTitleTh;
+
     const result = await createUserWithEmailAndPassword(auth, email, pass);
     if (result.user) {
       await updateProfile(result.user, { displayName });
@@ -146,18 +196,23 @@ export async function registerStaffWithEmail(
         id: result.user.uid,
         name: displayName,
         username: email.split('@')[0],
-        role,
-        roleTitleTh,
+        role: assignedRole,
+        roleTitleTh: assignedRoleTitleTh,
         department,
         phone,
         email,
-        active: true,
-        canEditDebts: role === 'ACCOUNTANT' || role === 'STATISTICIAN' || role === 'ADMIN',
-        canReview: role === 'STATISTICIAN' || role === 'EXECUTIVE' || role === 'ADMIN',
-        canApprove: role === 'EXECUTIVE' || role === 'ADMIN',
-        canManageUsers: role === 'ADMIN',
+        active: !shouldRequireApproval,
+        approvalStatus: shouldRequireApproval ? 'PENDING' : 'APPROVED',
+        registeredAt: new Date().toISOString(),
+        approvedAt: shouldRequireApproval ? undefined : new Date().toISOString(),
+        approvedBy: shouldRequireApproval ? undefined : 'SYSTEM_INIT',
+        canEditDebts: assignedRole === 'ACCOUNTANT' || assignedRole === 'STATISTICIAN' || assignedRole === 'ADMIN',
+        canReview: assignedRole === 'STATISTICIAN' || assignedRole === 'EXECUTIVE' || assignedRole === 'ADMIN',
+        canApprove: assignedRole === 'EXECUTIVE' || assignedRole === 'ADMIN',
+        canManageUsers: assignedRole === 'ADMIN',
       };
       await syncUserProfileToFirestore(userProfile);
+      return { user: result.user, profile: userProfile, isPendingApproval: shouldRequireApproval };
     }
     return { user: result.user };
   } catch (error) {
@@ -165,30 +220,101 @@ export async function registerStaffWithEmail(
     
     // If Email/Password provider isn't enabled in Firebase Console, fallback gracefully to Firestore registration!
     if (msg.includes('operation-not-allowed') || msg.includes('admin-restricted-operation')) {
+      const settings = await loadSecuritySettingsFromFirestore();
+      const existingUsers = await loadUsersFromFirestore();
+      const approvedUsers = existingUsers.filter((u) => u.approvalStatus === 'APPROVED' || (u.active && !u.approvalStatus));
+      const isFirstUser = approvedUsers.length === 0;
+      const shouldRequireApproval = settings.requireAdminApproval && !isFirstUser;
+
+      const assignedRole: UserRole = isFirstUser ? 'ADMIN' : role;
+      const assignedRoleTitleTh = isFirstUser ? 'ผู้ดูแลระบบไอที (Super Admin บัญชีหลัก)' : roleTitleTh;
+
       const fallbackUid = `skb-user-${Date.now()}`;
       const userProfile: UserProfile = {
         id: fallbackUid,
         name: displayName,
         username: email.split('@')[0],
-        role,
-        roleTitleTh,
+        role: assignedRole,
+        roleTitleTh: assignedRoleTitleTh,
         department,
         phone,
         email,
-        active: true,
-        canEditDebts: role === 'ACCOUNTANT' || role === 'STATISTICIAN' || role === 'ADMIN',
-        canReview: role === 'STATISTICIAN' || role === 'EXECUTIVE' || role === 'ADMIN',
-        canApprove: role === 'EXECUTIVE' || role === 'ADMIN',
-        canManageUsers: role === 'ADMIN',
+        active: !shouldRequireApproval,
+        approvalStatus: shouldRequireApproval ? 'PENDING' : 'APPROVED',
+        registeredAt: new Date().toISOString(),
+        approvedAt: shouldRequireApproval ? undefined : new Date().toISOString(),
+        approvedBy: shouldRequireApproval ? undefined : 'SYSTEM_INIT',
+        canEditDebts: assignedRole === 'ACCOUNTANT' || assignedRole === 'STATISTICIAN' || assignedRole === 'ADMIN',
+        canReview: assignedRole === 'STATISTICIAN' || assignedRole === 'EXECUTIVE' || assignedRole === 'ADMIN',
+        canApprove: assignedRole === 'EXECUTIVE' || assignedRole === 'ADMIN',
+        canManageUsers: assignedRole === 'ADMIN',
       };
       await syncUserProfileToFirestore(userProfile);
       return {
         user: { uid: fallbackUid, email, displayName },
+        profile: userProfile,
+        isPendingApproval: shouldRequireApproval,
         isFallback: true,
       };
     }
 
     return { user: null as unknown as FirebaseUser, error: msg };
+  }
+}
+
+export async function approveUserInFirestore(
+  userId: string,
+  approvedBy: string,
+  updatedRole?: UserRole
+): Promise<boolean> {
+  const path = `users/${userId}`;
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) return false;
+    const existing = snap.data() as UserProfile;
+    const targetRole = updatedRole || existing.role;
+    const updated: UserProfile = {
+      ...existing,
+      role: targetRole,
+      active: true,
+      approvalStatus: 'APPROVED',
+      approvedAt: new Date().toISOString(),
+      approvedBy,
+      canEditDebts: targetRole === 'ACCOUNTANT' || targetRole === 'STATISTICIAN' || targetRole === 'ADMIN',
+      canReview: targetRole === 'STATISTICIAN' || targetRole === 'EXECUTIVE' || targetRole === 'ADMIN',
+      canApprove: targetRole === 'EXECUTIVE' || targetRole === 'ADMIN',
+      canManageUsers: targetRole === 'ADMIN',
+    };
+    await setDoc(userDocRef, updated, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
+  }
+}
+
+export async function rejectUserInFirestore(userId: string): Promise<boolean> {
+  const path = `users/${userId}`;
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await setDoc(userDocRef, { approvalStatus: 'REJECTED', active: false }, { merge: true });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
+  }
+}
+
+export async function deleteUserFromFirestore(userId: string): Promise<boolean> {
+  const path = `users/${userId}`;
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await deleteDoc(userDocRef);
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    return false;
   }
 }
 

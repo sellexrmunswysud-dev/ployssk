@@ -40,6 +40,8 @@ export interface MonthlyRecord {
 
 export type UserRole = 'EXECUTIVE' | 'STATISTICIAN' | 'ACCOUNTANT' | 'ADMIN';
 
+export type ApprovalStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -50,10 +52,19 @@ export interface UserProfile {
   phone: string;
   email: string;
   active: boolean;
+  approvalStatus?: ApprovalStatus;
+  registeredAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
   canEditDebts: boolean;
   canReview: boolean;
   canApprove: boolean;
   canManageUsers: boolean;
+}
+
+export interface SystemSecuritySettings {
+  requireAdminApproval: boolean;
+  allowAutoApproveFirstAdmin: boolean;
 }
 
 export interface NotificationLog {

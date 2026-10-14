@@ -4,10 +4,10 @@ import {
   UserProfile,
   NotificationSettings,
   NotificationLog,
+  SystemSecuritySettings,
 } from './types';
 import {
   INITIAL_MONTHLY_RECORD,
-  INITIAL_USERS,
   INITIAL_NOTIFICATION_SETTINGS,
   INITIAL_NOTIFICATION_LOGS,
 } from './data/initialRightsData';
@@ -27,6 +27,8 @@ import {
   syncUserProfileToFirestore,
   loadUsersFromFirestore,
   getUserProfileFromFirestore,
+  loadSecuritySettingsFromFirestore,
+  DEFAULT_SECURITY_SETTINGS,
   logoutUser,
   auth,
 } from './services/firebase';
@@ -44,15 +46,13 @@ import {
   Menu,
   X,
   ShieldCheck,
-  Building,
-  CheckCircle2,
   Calendar,
-  LogIn,
-  UserCheck,
   LogOut,
   UserPlus,
+  Clock,
+  ChevronRight,
   Database,
-  Sparkles,
+  Building,
 } from 'lucide-react';
 
 export default function App() {
@@ -102,7 +102,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed: UserProfile[] = JSON.parse(saved);
-        // ลบผู้ใช้งานทดสอบออก (usr-1, usr-2, usr-3, usr-4 หรือ username ลงท้ายด้วย _skb)
+        // ลบผู้ใช้งานทดสอบออก
         const cleaned = parsed.filter(
           (u) =>
             !['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id) &&
@@ -140,6 +140,9 @@ export default function App() {
     return null;
   });
 
+  // Security Policy Settings
+  const [securitySettings, setSecuritySettings] = useState<SystemSecuritySettings>(DEFAULT_SECURITY_SETTINGS);
+
   // State to check session before rendering web app
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(() => {
     return !!localStorage.getItem('skb_current_user_id');
@@ -173,11 +176,17 @@ export default function App() {
   const handleUpdateRecord = (updatedRecord: MonthlyRecord) => {
     setRecord(updatedRecord);
     localStorage.setItem('skb_monthly_record', JSON.stringify(updatedRecord));
-    // Asynchronously sync to Cloud Firestore
     saveRecordToFirestore(updatedRecord);
   };
 
   useEffect(() => {
+    // Load security settings
+    loadSecuritySettingsFromFirestore().then((settings) => {
+      if (settings) {
+        setSecuritySettings(settings);
+      }
+    }).catch(() => {});
+
     // Initial fetch from Cloud Firestore or seed if not exists
     loadRecordFromFirestore(record.id).then((cloudRecord) => {
       if (cloudRecord && cloudRecord.items && cloudRecord.items.length > 0) {
@@ -186,9 +195,7 @@ export default function App() {
       } else {
         saveRecordToFirestore(record);
       }
-    }).catch(() => {
-      // Fallback seamlessly to local cache
-    });
+    }).catch(() => {});
 
     const unsub = subscribeToRecord(record.id, (cloudRecord) => {
       if (cloudRecord && cloudRecord.items) {
@@ -200,7 +207,6 @@ export default function App() {
     // Sync registered staff accounts from Cloud Firestore
     loadUsersFromFirestore().then((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
-        // Exclude mock test users
         const validUsers = cloudUsers.filter(
           (u) =>
             !['usr-1', 'usr-2', 'usr-3', 'usr-4'].includes(u.id) &&
@@ -231,8 +237,11 @@ export default function App() {
         if (fbUser) {
           const profile = await getUserProfileFromFirestore(fbUser.uid);
           if (profile) {
-            setCurrentUser(profile);
-            localStorage.setItem('skb_current_user_id', profile.id);
+            // Check if approved
+            if (profile.approvalStatus === 'APPROVED' || (profile.active && !profile.approvalStatus)) {
+              setCurrentUser(profile);
+              localStorage.setItem('skb_current_user_id', profile.id);
+            }
           }
         }
       } catch (e) {
@@ -313,6 +322,13 @@ export default function App() {
   // Check overdue count > 30 days
   const overdueCount = record.items.filter((i) => i.daysOverdue > 30 && i.endingBalance > 0).length;
 
+  // Pending user registrations count
+  const pendingUsersCount = users.filter(
+    (u) =>
+      u.approvalStatus === 'PENDING' ||
+      (!u.active && u.approvalStatus !== 'REJECTED' && u.approvalStatus !== 'APPROVED')
+  ).length;
+
   const navigateToLedgerWithFilter = (filterMode?: 'OVERDUE' | 'ALL' | 'GOV' | 'EXT') => {
     if (filterMode) {
       setLedgerInitialFilter(filterMode);
@@ -350,372 +366,417 @@ export default function App() {
     );
   }
 
+  // Nav Items definition for Left Sidebar
+  const navItems = [
+    {
+      id: 'DASHBOARD' as const,
+      label: 'แดชบอร์ดภาพรวม',
+      icon: <LayoutDashboard className="w-4 h-4 shrink-0" />,
+      badge: null,
+    },
+    {
+      id: 'LEDGER' as const,
+      label: 'ทะเบียนคุม 52 สิทธิ์',
+      icon: <TableProperties className="w-4 h-4 shrink-0" />,
+      badge:
+        overdueCount > 0 ? (
+          <span className="px-1.5 py-0.2 rounded-md bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 font-bold text-[10px]">
+            {overdueCount}
+          </span>
+        ) : null,
+    },
+    {
+      id: 'REPORT' as const,
+      label: 'รายงานเสนอผู้บริหาร',
+      icon: <Printer className="w-4 h-4 shrink-0" />,
+      badge: null,
+    },
+    {
+      id: 'NOTIFICATIONS' as const,
+      label: 'ระบบแจ้งเตือน SMS/Email',
+      icon: <Bell className="w-4 h-4 shrink-0" />,
+      badge: null,
+    },
+    {
+      id: 'RBAC' as const,
+      label: 'จัดการสิทธิ์และผู้ใช้',
+      icon: <Users className="w-4 h-4 shrink-0" />,
+      badge:
+        currentUser.canManageUsers && pendingUsersCount > 0 ? (
+          <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold text-[10px] animate-pulse">
+            {pendingUsersCount} รออนุมัติ
+          </span>
+        ) : null,
+    },
+    {
+      id: 'RECONCILE' as const,
+      label: 'เปรียบเทียบข้อมูล HIS',
+      icon: <GitCompare className="w-4 h-4 shrink-0" />,
+      badge: null,
+    },
+  ];
+
+  const currentNav = navItems.find((n) => n.id === activeTab);
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col antialiased">
-      {/* Top Bar Contract: 3 Zones */}
-      <header className="no-print sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-          {/* Zone 1: Brand Zone */}
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-              aria-label="Toggle mobile menu"
-            >
-              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <div className="flex items-center gap-2.5">
-              <SangkhlaburiLogo size={36} className="w-9 h-9" />
-              <div>
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveTab('DASHBOARD');
-                  }}
-                  className="text-sm font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0 flex items-center gap-1.5"
-                >
-                  <span>รพ.สังขละบุรี</span>
-                  <span className="text-slate-400 font-normal">|</span>
-                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-xs">SKB Management</span>
-                </a>
-                <span className="text-[10px] text-slate-500 block leading-none">
-                  ระบบสารสนเทศบริหารจัดการทะเบียนคุมลูกหนี้ 52 สิทธิ์
-                </span>
+    <div className="h-screen w-screen flex overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-emerald-500 selection:text-white">
+      {/* ============================================================ */}
+      {/* DESKTOP LEFT SIDEBAR                                          */}
+      {/* ============================================================ */}
+      <aside className="hidden lg:flex w-64 xl:w-72 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col justify-between h-full z-30 select-none transition-all">
+        {/* Top: Brand Header & Navigation List */}
+        <div className="flex flex-col flex-1 overflow-y-auto">
+          {/* Brand Header */}
+          <div className="p-4 xl:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+            <SangkhlaburiLogo size={40} className="w-10 h-10 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold text-sm text-slate-900 dark:text-white tracking-tight truncate">
+                รพ.สังขละบุรี
+              </div>
+              <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 truncate">
+                SKB Management
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                ทะเบียนคุม 52 ผังบัญชี
               </div>
             </div>
           </div>
 
-          {/* Zone 2: Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-            <button
-              onClick={() => setActiveTab('DASHBOARD')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'DASHBOARD'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              แดชบอร์ดภาพรวม
-            </button>
-
-            <button
-              onClick={() => {
-                setLedgerInitialFilter('ALL');
-                setActiveTab('LEDGER');
-              }}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'LEDGER'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <TableProperties className="w-3.5 h-3.5" />
-              ทะเบียนคุม 52 สิทธิ์
-              {overdueCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse ml-0.5" />
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('REPORT')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'REPORT'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <Printer className="w-3.5 h-3.5" />
-              รายงานราชการเสนอผู้บริหาร
-            </button>
-
-            <button
-              onClick={() => setActiveTab('NOTIFICATIONS')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'NOTIFICATIONS'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <Bell className="w-3.5 h-3.5" />
-              ระบบแจ้งเตือน SMS/Email
-            </button>
-
-            <button
-              onClick={() => setActiveTab('RBAC')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'RBAC'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              จัดการสิทธิ์ผู้ใช้ (RBAC)
-            </button>
-
-            <button
-              onClick={() => setActiveTab('RECONCILE')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                activeTab === 'RECONCILE'
-                  ? 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 font-bold'
-                  : 'hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <GitCompare className="w-3.5 h-3.5" />
-              เปรียบเทียบข้อมูล HIS
-            </button>
-          </nav>
-
-          {/* Zone 3: Primary Actions (Dark mode toggle & User Profile) */}
-          <div className="flex items-center gap-2.5 shrink-0">
-
-            {/* Dark Mode Toggle */}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5 text-xs font-medium cursor-pointer shadow-2xs"
-              title={darkMode ? 'ปิดโหมดถนอมสายตา (สลับเป็นโหมดสว่าง)' : 'เปิดโหมดถนอมสายตา (สลับเป็นโหมดมืด)'}
-              aria-label="Toggle Dark Mode"
-            >
-              {darkMode ? (
-                <>
-                  <Sun className="w-4 h-4 text-amber-400" />
-                  <span className="hidden sm:inline">โหมดสว่าง</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-4 h-4 text-emerald-600" />
-                  <span className="hidden sm:inline">โหมดถนอมสายตา</span>
-                </>
-              )}
-            </button>
-
-            {/* User Profile & Auth Actions */}
-            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-750 text-xs text-left">
-                  <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0 shadow-2xs">
-                    {currentUser.name.charAt(0)}
-                  </div>
-                  <div className="leading-tight">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[120px]">
-                        {currentUser.name}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                        {currentUser.role}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 block line-clamp-1">
-                      {currentUser.roleTitleTh}
-                    </span>
-                  </div>
-                </div>
-
-                {currentUser.canManageUsers && (
-                  <button
-                    onClick={() => openAuthModal('REGISTER')}
-                    title="ลงทะเบียนเจ้าหน้าที่เพิ่ม"
-                    className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </button>
-                )}
-
-                <button
-                  onClick={handleLogout}
-                  title="ออกจากระบบ"
-                  className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">ออกจากระบบ</span>
-                </button>
-              </div>
+          {/* Navigation Links */}
+          <div className="p-3">
+            <div className="px-3 pb-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+              เมนูหลัก
             </div>
+            <nav className="space-y-1 text-xs">
+              {navItems.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      if (item.id === 'LEDGER') {
+                        setLedgerInitialFilter('ALL');
+                      }
+                      setActiveTab(item.id);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer text-left ${
+                      isActive
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold border-l-4 border-emerald-600 shadow-2xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/60 font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 truncate">
+                      <span className={isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}>
+                        {item.icon}
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    {item.badge}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
         </div>
 
-        {/* Mobile Navigation Menu Dropdown */}
-        {isMobileMenuOpen && (
-          <div className="lg:hidden px-4 pt-2 pb-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1 text-xs">
+        {/* Bottom Section: Current User Profile, Dark Mode & Logout */}
+        <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5 bg-slate-50/50 dark:bg-slate-900/50">
+          {/* User Profile Card */}
+          <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/80 flex items-center gap-2.5 shadow-2xs">
+            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-2xs">
+              {currentUser.name.charAt(0)}
+            </div>
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                  {currentUser.name}
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 shrink-0">
+                  {currentUser.role}
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+                {currentUser.roleTitleTh}
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons: Dark Mode & Sign Out */}
+          <div className="flex flex-col gap-1.5">
             <button
-              onClick={() => {
-                setActiveTab('DASHBOARD');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+              onClick={() => setDarkMode(!darkMode)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors border border-slate-200/60 dark:border-slate-800 cursor-pointer shadow-2xs"
             >
-              <LayoutDashboard className="w-4 h-4 text-emerald-600" />
-              แดชบอร์ดภาพรวม
-            </button>
-            <button
-              onClick={() => {
-                setLedgerInitialFilter('ALL');
-                setActiveTab('LEDGER');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
-            >
-              <TableProperties className="w-4 h-4 text-emerald-600" />
-              ทะเบียนคุม 52 สิทธิ์
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('REPORT');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
-            >
-              <Printer className="w-4 h-4 text-emerald-600" />
-              รายงานราชการเสนอผู้บริหาร
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('NOTIFICATIONS');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
-            >
-              <Bell className="w-4 h-4 text-emerald-600" />
-              ระบบแจ้งเตือน SMS/Email
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('RBAC');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
-            >
-              <Users className="w-4 h-4 text-emerald-600" />
-              จัดการสิทธิ์ผู้ใช้ (RBAC)
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('RECONCILE');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 rounded-lg font-medium hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
-            >
-              <GitCompare className="w-4 h-4 text-emerald-600" />
-              เปรียบเทียบข้อมูล HIS
+              <div className="flex items-center gap-2">
+                {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-emerald-600" />}
+                <span>{darkMode ? 'โหมดสว่าง' : 'โหมดถนอมสายตา'}</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-semibold">
+                {darkMode ? 'เปิดอยู่' : 'ปิดอยู่'}
+              </span>
             </button>
 
-            {/* Mobile Auth Actions */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="space-y-2">
-                <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
-                  <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                    {currentUser.roleTitleTh}
-                  </span>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200/60 dark:border-red-900/60 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>ออกจากระบบ</span>
+            </button>
+          </div>
+
+          {/* Cloud DB & Vercel live badge */}
+          <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 pt-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Cloud Firestore เชื่อมต่อแล้ว</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* ============================================================ */}
+      {/* MOBILE DRAWER SIDEBAR                                         */}
+      {/* ============================================================ */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+
+          {/* Drawer Content */}
+          <div className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 h-full flex flex-col justify-between z-10 shadow-2xl animate-in slide-in-from-left duration-200">
+            <div className="flex flex-col flex-1 overflow-y-auto">
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <SangkhlaburiLogo size={36} className="w-9 h-9 shrink-0" />
+                  <div>
+                    <div className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                      รพ.สังขละบุรี
+                    </div>
+                    <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                      ระบบคุมลูกหนี้ 52 สิทธิ์
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  {currentUser.canManageUsers && (
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Mobile Navigation List */}
+              <nav className="p-3 space-y-1 text-xs">
+                {navItems.map((item) => {
+                  const isActive = activeTab === item.id;
+                  return (
                     <button
+                      key={item.id}
                       onClick={() => {
-                        openAuthModal('REGISTER');
+                        if (item.id === 'LEDGER') {
+                          setLedgerInitialFilter('ALL');
+                        }
+                        setActiveTab(item.id);
                         setIsMobileMenuOpen(false);
                       }}
-                      className="flex-1 py-2 px-2.5 rounded-lg font-semibold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer text-left ${
+                        isActive
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold border-l-4 border-emerald-600'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 font-medium'
+                      }`}
                     >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      ลงทะเบียนเพิ่ม
+                      <div className="flex items-center gap-2.5 truncate">
+                        {item.icon}
+                        <span className="truncate">{item.label}</span>
+                      </div>
+                      {item.badge}
                     </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      handleLogout();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="flex-1 text-center py-2 px-3 rounded-lg font-semibold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    ออกจากระบบ
-                  </button>
-                </div>
-              </div>
+                  );
+                })}
+              </nav>
             </div>
 
-            {/* Mobile Dark Mode Toggle */}
-            <div className="pt-1">
+            {/* Mobile Bottom Profile */}
+            <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/80 flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shrink-0">
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="min-w-0 flex-1 text-xs">
+                  <div className="font-bold text-slate-900 dark:text-white truncate">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {currentUser.roleTitleTh}
+                  </div>
+                </div>
+              </div>
+
               <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="w-full text-left px-3 py-2 rounded-lg font-medium bg-slate-50 dark:bg-slate-800 flex items-center justify-between"
+                onClick={() => {
+                  handleLogout();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 cursor-pointer"
               >
-                <span className="flex items-center gap-2">
-                  {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-emerald-600" />}
-                  <span>โหมดถนอมสายตา (Dark Mode)</span>
-                </span>
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                  {darkMode ? 'เปิดอยู่ (มืด)' : 'ปิดอยู่ (สว่าง)'}
-                </span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span>ออกจากระบบ</span>
               </button>
             </div>
           </div>
-        )}
-      </header>
+        </div>
+      )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'DASHBOARD' && (
-          <DashboardView
-            record={record}
-            onNavigateToLedger={navigateToLedgerWithFilter}
-            onNavigateToReport={() => setActiveTab('REPORT')}
-          />
-        )}
+      {/* ============================================================ */}
+      {/* MAIN VIEWPORT WORKSPACE (Fits Screen, Comfortable Viewing)    */}
+      {/* ============================================================ */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+        {/* Top Header Bar */}
+        <header className="h-14 shrink-0 px-4 sm:px-6 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between z-20 transition-colors">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
 
-        {activeTab === 'LEDGER' && (
-          <DebtorLedgerView
-            record={record}
-            currentUser={currentUser}
-            initialFilter={ledgerInitialFilter}
-            onUpdateRecord={handleUpdateRecord}
-            onResetToOfficial={handleResetToOfficial}
-          />
-        )}
+            {/* Active Page Title & Icon */}
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-emerald-700 dark:text-emerald-400 shrink-0">
+                {currentNav?.icon}
+              </span>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                {currentNav?.label}
+              </h2>
+            </div>
 
-        {activeTab === 'REPORT' && (
-          <OfficialReportView
-            record={record}
-            currentUser={currentUser}
-            onUpdateRecord={handleUpdateRecord}
-          />
-        )}
+            {/* Fiscal Period Pill */}
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 shrink-0">
+              <Calendar className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span>งวดประจำเดือน {record.monthName} {record.year} (ปีงบประมาณ 2568)</span>
+            </div>
+          </div>
 
-        {activeTab === 'NOTIFICATIONS' && (
-          <NotificationSystemView
-            record={record}
-            currentUser={currentUser}
-            settings={notifSettings}
-            logs={notifLogs}
-            onUpdateSettings={handleUpdateNotifSettings}
-            onAddLog={handleAddNotifLog}
-          />
-        )}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Pending Approvals Quick Alert for Admin */}
+            {currentUser.canManageUsers && pendingUsersCount > 0 && (
+              <button
+                onClick={() => setActiveTab('RBAC')}
+                className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:bg-amber-100 cursor-pointer animate-pulse"
+                title="มีคำขอสมัครสมาชิกรอการอนุมัติ"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">คำขอรออนุมัติ:</span>
+                <span>{pendingUsersCount} คน</span>
+              </button>
+            )}
 
-        {activeTab === 'RBAC' && (
-          <RBACManagementView
-            users={users}
-            currentUser={currentUser}
-            record={record}
-            onSwitchUser={handleSwitchUser}
-            onUpdateUsers={handleUpdateUsers}
-            onRestoreRecord={handleUpdateRecord}
-            onResetDatabase={handleResetDatabase}
-            onOpenRegisterModal={() => openAuthModal('REGISTER')}
-          />
-        )}
+            {/* Overdue Debt Alert Badge */}
+            {overdueCount > 0 && (
+              <button
+                onClick={() => navigateToLedgerWithFilter('OVERDUE')}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs font-bold cursor-pointer hover:bg-red-100 transition-colors"
+                title="คลิกเพื่อกรองเฉพาะรายการค้างชำระเกิน 30 วัน"
+              >
+                <Flame className="w-3.5 h-3.5 text-red-600" />
+                <span>ค้างเกิน 30 วัน ({overdueCount})</span>
+              </button>
+            )}
 
-        {activeTab === 'RECONCILE' && (
-          <ReconciliationView
-            record={record}
-            onUpdateRecord={handleUpdateRecord}
-          />
-        )}
-      </main>
+            {/* Dark Mode Icon Button */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title={darkMode ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดถนอมสายตา'}
+              aria-label="Toggle dark mode"
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-emerald-600" />}
+            </button>
+          </div>
+        </header>
 
-      {/* Auth & Registration Modal */}
+        {/* Scrollable View Content Workspace (Comfortable eye-spacing & responsive width) */}
+        <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 scroll-smooth">
+          <div className="max-w-[1600px] w-full mx-auto space-y-6">
+            {activeTab === 'DASHBOARD' && (
+              <DashboardView
+                record={record}
+                onNavigateToLedger={navigateToLedgerWithFilter}
+                onNavigateToReport={() => setActiveTab('REPORT')}
+              />
+            )}
+
+            {activeTab === 'LEDGER' && (
+              <DebtorLedgerView
+                record={record}
+                currentUser={currentUser}
+                initialFilter={ledgerInitialFilter}
+                onUpdateRecord={handleUpdateRecord}
+                onResetToOfficial={handleResetToOfficial}
+              />
+            )}
+
+            {activeTab === 'REPORT' && (
+              <OfficialReportView
+                record={record}
+                currentUser={currentUser}
+                onUpdateRecord={handleUpdateRecord}
+              />
+            )}
+
+            {activeTab === 'NOTIFICATIONS' && (
+              <NotificationSystemView
+                record={record}
+                currentUser={currentUser}
+                settings={notifSettings}
+                logs={notifLogs}
+                onUpdateSettings={handleUpdateNotifSettings}
+                onAddLog={handleAddNotifLog}
+              />
+            )}
+
+            {activeTab === 'RBAC' && (
+              <RBACManagementView
+                users={users}
+                currentUser={currentUser}
+                record={record}
+                securitySettings={securitySettings}
+                onUpdateSecuritySettings={(newSettings) => setSecuritySettings(newSettings)}
+                onSwitchUser={handleSwitchUser}
+                onUpdateUsers={handleUpdateUsers}
+                onRestoreRecord={handleUpdateRecord}
+                onResetDatabase={handleResetDatabase}
+                onOpenRegisterModal={() => openAuthModal('REGISTER')}
+              />
+            )}
+
+            {activeTab === 'RECONCILE' && (
+              <ReconciliationView
+                record={record}
+                onUpdateRecord={handleUpdateRecord}
+              />
+            )}
+
+            {/* Bottom Footer inside main scroll */}
+            <footer className="no-print pt-8 pb-4 text-center text-xs text-slate-400 dark:text-slate-500 border-t border-slate-200/60 dark:border-slate-800/80">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <SangkhlaburiLogo size={18} className="w-4 h-4 inline" />
+                  <span>กลุ่มงานประกันสุขภาพ ยุทธศาสตร์และสารสนเทศทางการแพทย์ โรงพยาบาลสังขละบุรี</span>
+                </div>
+                <span>ระบบสารสนเทศบริหารจัดการทะเบียนคุมลูกหนี้ 52 ผังบัญชี (SKB Management System)</span>
+              </div>
+            </footer>
+          </div>
+        </main>
+      </div>
+
+      {/* Auth & Registration Modal (if invoked inside app) */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
@@ -724,19 +785,6 @@ export default function App() {
         currentUser={currentUser}
         initialTab={authModalTab}
       />
-
-      {/* Footer */}
-      <footer className="no-print mt-auto border-t border-slate-200 dark:border-slate-800 py-5 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <SangkhlaburiLogo size={20} className="w-5 h-5 inline" />
-            <span>กลุ่มงานประกันสุขภาพ ยุทธศาสตร์และสารสนเทศทางการแพทย์ โรงพยาบาลสังขละบุรี</span>
-          </div>
-          <div>
-            <span>ระบบสารสนเทศบริหารจัดการทะเบียนคุมลูกหนี้ (SKB Management System)</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

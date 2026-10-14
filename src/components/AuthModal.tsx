@@ -195,6 +195,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         phone: regPhone.trim(),
         email: regEmail.trim(),
         active: true,
+        approvalStatus: 'APPROVED',
         canEditDebts: regRole === 'ACCOUNTANT' || regRole === 'STATISTICIAN' || regRole === 'ADMIN',
         canReview: regRole === 'STATISTICIAN' || regRole === 'EXECUTIVE' || regRole === 'ADMIN',
         canApprove: regRole === 'EXECUTIVE' || regRole === 'ADMIN',

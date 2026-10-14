@@ -5,6 +5,8 @@ import {
   registerStaffWithEmail,
   getUserProfileFromFirestore,
   syncUserProfileToFirestore,
+  loadSecuritySettingsFromFirestore,
+  loadUsersFromFirestore,
 } from '../services/firebase';
 import { UserProfile, UserRole } from '../types';
 import { SangkhlaburiLogo } from './SangkhlaburiLogo';
@@ -27,7 +29,10 @@ import {
   Moon,
   ShieldCheck,
   FileSpreadsheet,
-  Check
+  Check,
+  Clock,
+  ShieldAlert,
+  Info,
 } from 'lucide-react';
 
 interface LoginPortalProps {
@@ -62,6 +67,12 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [pendingNotice, setPendingNotice] = useState<{
+    name: string;
+    email: string;
+    roleTitleTh: string;
+    department: string;
+  } | null>(null);
 
   // Quick switch role title based on role selected
   const handleRoleChange = (role: UserRole) => {
@@ -86,34 +97,86 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     }
   };
 
+  // Re-check pending status live from Firestore
+  const handleRecheckApproval = async () => {
+    if (!pendingNotice?.email) return;
+    setIsLoading(true);
+    try {
+      const allUsers = await loadUsersFromFirestore();
+      const matched = allUsers.find(
+        (u) => u.email.toLowerCase() === pendingNotice.email.toLowerCase()
+      );
+      if (matched && matched.approvalStatus === 'APPROVED') {
+        setPendingNotice(null);
+        setSuccessMsg(`บัญชี "${matched.name}" ได้รับการอนุมัติแล้ว! กำลังเข้าสู่ระบบ...`);
+        setTimeout(() => {
+          onLoginSuccess(matched);
+        }, 700);
+      } else {
+        alert('สถานะ: ยังอยู่ระหว่างรอการอนุมัติจากผู้ดูแลระบบ กรุณาแจ้งผู้ดูแลระบบเพื่อเปิดสิทธิ์');
+      }
+    } catch {
+      alert('ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Handle Google Login
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setPendingNotice(null);
     const res = await loginWithGoogle();
     setIsLoading(false);
 
     if (res.user) {
       let profile = await getUserProfileFromFirestore(res.user.uid);
       if (!profile) {
+        const settings = await loadSecuritySettingsFromFirestore();
+        const existingUsers = await loadUsersFromFirestore();
+        const approvedUsers = existingUsers.filter((u) => u.approvalStatus === 'APPROVED' || (u.active && !u.approvalStatus));
+        const isFirstUser = approvedUsers.length === 0;
+        const shouldRequireApproval = settings.requireAdminApproval && !isFirstUser;
+
         profile = {
           id: res.user.uid,
           name: res.user.displayName || 'เจ้าหน้าที่ รพ.สังขละบุรี',
           username: res.user.email?.split('@')[0] || 'staff',
-          role: 'ACCOUNTANT',
-          roleTitleTh: 'เจ้าหน้าที่บันทึกข้อมูล',
+          role: isFirstUser ? 'ADMIN' : 'ACCOUNTANT',
+          roleTitleTh: isFirstUser ? 'ผู้ดูแลระบบไอที (Super Admin บัญชีหลัก)' : 'เจ้าหน้าที่บันทึกข้อมูล',
           department: 'กลุ่มงานประกันสุขภาพ ยุทธศาสตร์และสารสนเทศ',
           phone: res.user.phoneNumber || '034-595000',
           email: res.user.email || '',
-          active: true,
+          active: !shouldRequireApproval,
+          approvalStatus: shouldRequireApproval ? 'PENDING' : 'APPROVED',
+          registeredAt: new Date().toISOString(),
+          approvedAt: shouldRequireApproval ? undefined : new Date().toISOString(),
+          approvedBy: shouldRequireApproval ? undefined : 'SYSTEM_INIT',
           canEditDebts: true,
-          canReview: false,
-          canApprove: false,
-          canManageUsers: false,
+          canReview: isFirstUser,
+          canApprove: isFirstUser,
+          canManageUsers: isFirstUser,
         };
         await syncUserProfileToFirestore(profile);
       }
+
+      if (profile.approvalStatus === 'PENDING' || (!profile.active && profile.approvalStatus !== 'APPROVED')) {
+        setPendingNotice({
+          name: profile.name,
+          email: profile.email,
+          roleTitleTh: profile.roleTitleTh || profile.role,
+          department: profile.department || 'โรงพยาบาลสังขละบุรี',
+        });
+        return;
+      }
+
+      if (profile.approvalStatus === 'REJECTED') {
+        setErrorMsg('คำขอเข้าใช้งานผ่านบัญชีนี้ไม่ได้รับอนุมัติจากผู้ดูแลระบบ กรุณาติดต่อศูนย์ไอที รพ.สังขละบุรี');
+        return;
+      }
+
       setSuccessMsg(`ยินดีต้อนรับ ${profile.name} เข้าสู่ระบบสำเร็จ`);
       setTimeout(() => {
         onLoginSuccess(profile!);
@@ -138,12 +201,27 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setPendingNotice(null);
     const res = await loginWithEmail(loginEmail.trim(), loginPass);
     setIsLoading(false);
 
     if (res.user) {
       let profile = await getUserProfileFromFirestore(res.user.uid);
-      if (!profile) {
+      if (profile) {
+        if (profile.approvalStatus === 'PENDING' || (!profile.active && profile.approvalStatus !== 'APPROVED')) {
+          setPendingNotice({
+            name: profile.name,
+            email: profile.email,
+            roleTitleTh: profile.roleTitleTh || profile.role,
+            department: profile.department || 'โรงพยาบาลสังขละบุรี',
+          });
+          return;
+        }
+        if (profile.approvalStatus === 'REJECTED') {
+          setErrorMsg('คำขอเข้าใช้งานผ่านบัญชีนี้ไม่ได้รับอนุมัติจากผู้ดูแลระบบ กรุณาติดต่อศูนย์ไอที รพ.สังขละบุรี');
+          return;
+        }
+      } else {
         profile = {
           id: res.user.uid,
           name: res.user.displayName || loginEmail.split('@')[0],
@@ -154,6 +232,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
           phone: '034-595000',
           email: loginEmail,
           active: true,
+          approvalStatus: 'APPROVED',
           canEditDebts: true,
           canReview: false,
           canApprove: false,
@@ -161,6 +240,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         };
         await syncUserProfileToFirestore(profile);
       }
+
       setSuccessMsg(`ยินดีต้อนรับคุณ ${profile.name} เข้าสู่ระบบสำเร็จ`);
       setTimeout(() => {
         onLoginSuccess(profile!);
@@ -171,7 +251,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         res.error.includes('invalid-credential') ||
         res.error.includes('wrong-password')
       ) {
-        setErrorMsg('อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากยังไม่มีบัญชี สามารถกดแท็บ "ลงทะเบียนเจ้าหน้าที่ใหม่" ด้านบนได้ทันที)');
+        setErrorMsg('อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากยังไม่มีบัญชี สามารถกดแท็บ "สมัครสมาชิกใหม่" ด้านบนได้ทันที)');
       } else if (res.error.includes('operation-not-allowed')) {
         setErrorMsg('Email/Password provider ยังไม่ได้เปิดใช้งานใน Firebase Console กรุณาใช้ปุ่ม Google Sign-In หรือเปิดใช้งานใน Firebase Authentication');
       } else {
@@ -196,6 +276,7 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setIsLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setPendingNotice(null);
 
     const res = await registerStaffWithEmail(
       regEmail.trim(),
@@ -209,7 +290,22 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
     setIsLoading(false);
 
     if (res.user) {
-      const newProfile: UserProfile = {
+      if (res.isPendingApproval) {
+        setPendingNotice({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          roleTitleTh: regRoleTitleTh,
+          department: regDepartment,
+        });
+        setActiveTab('LOGIN');
+        setLoginEmail(regEmail.trim());
+        setSuccessMsg(null);
+        setErrorMsg(null);
+        return;
+      }
+
+      // If auto-approved (e.g. first user in system)
+      const approvedProfile = res.profile || {
         id: res.user.uid,
         name: regName.trim(),
         username: regEmail.split('@')[0],
@@ -219,15 +315,16 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
         phone: regPhone,
         email: regEmail.trim(),
         active: true,
-        canEditDebts: regRole === 'ACCOUNTANT' || regRole === 'STATISTICIAN' || regRole === 'ADMIN',
-        canReview: regRole === 'STATISTICIAN' || regRole === 'EXECUTIVE' || regRole === 'ADMIN',
-        canApprove: regRole === 'EXECUTIVE' || regRole === 'ADMIN',
-        canManageUsers: regRole === 'ADMIN',
+        approvalStatus: 'APPROVED',
+        canEditDebts: true,
+        canReview: true,
+        canApprove: true,
+        canManageUsers: true,
       };
 
-      setSuccessMsg('ลงทะเบียนเจ้าหน้าที่ใหม่เรียบร้อยแล้ว กำลังนำท่านเข้าสู่ระบบ...');
+      setSuccessMsg('ลงทะเบียนผู้ดูแลระบบบัญชีแรกเรียบร้อยแล้ว กำลังนำท่านเข้าสู่ระบบ...');
       setTimeout(() => {
-        onLoginSuccess(newProfile);
+        onLoginSuccess(approvedProfile);
       }, 700);
     } else if (res.error) {
       if (res.error.includes('email-already-in-use')) {
@@ -350,6 +447,47 @@ export const LoginPortal: React.FC<LoginPortalProps> = ({
 
             {/* Form Body */}
             <div className="p-6">
+              {/* Pending Admin Approval Notice */}
+              {pendingNotice && (
+                <div className="mb-5 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 rounded-2xl animate-in fade-in space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300 shrink-0 mt-0.5">
+                      <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="space-y-1 text-xs">
+                      <div className="font-bold text-amber-900 dark:text-amber-200 text-sm flex items-center gap-1.5">
+                        <span>บัญชีอยู่ระหว่างรอการอนุมัติจากผู้ดูแลระบบ</span>
+                      </div>
+                      <p className="text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                        เจ้าหน้าที่: <strong>{pendingNotice.name}</strong> ({pendingNotice.roleTitleTh})
+                      </p>
+                      <p className="text-amber-700/90 dark:text-amber-400/80 text-[11px] leading-relaxed">
+                        ระบบสารสนเทศ รพ.สังขละบุรี ได้รับข้อมูลคำขอเรียบร้อยแล้ว เนื่องจากเป็นระบบข้อมูลลูกหนี้และสิทธิการรักษา จึงกำหนดให้ต้องได้รับการอนุมัติจาก <strong>ผู้ดูแลระบบ (Admin)</strong> ก่อนเริ่มเข้าใช้งาน
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1 border-t border-amber-200/60 dark:border-amber-900/60">
+                    <button
+                      type="button"
+                      onClick={handleRecheckApproval}
+                      disabled={isLoading}
+                      className="flex-1 py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                      <span>ตรวจสอบสถานะการอนุมัติสด</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingNotice(null)}
+                      className="py-2 px-3 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-semibold hover:bg-amber-100/50 dark:hover:bg-amber-950 transition-colors cursor-pointer"
+                    >
+                      ปิด
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Feedback Alerts */}
               {errorMsg && (
                 <div className="mb-4 p-3.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300 animate-in fade-in">
