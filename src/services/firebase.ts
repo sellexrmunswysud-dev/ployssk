@@ -47,13 +47,24 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.warn('Firestore Operation Info: ', JSON.stringify(errInfo));
 }
 
+// Resolve config: prefer firebase-applet-config.json, with optional VITE_ env var overrides for Vercel
+const resolvedFirebaseConfig = {
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig?.projectId || 'ploy-d797f',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfig?.appId,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfig?.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig?.authDomain,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfig?.firestoreDatabaseId || 'ai-studio-0b5f39f1-42eb-4e7f-a501-b3844b7b6797',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig?.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig?.messagingSenderId,
+};
+
 // Initialize official Firebase App with provisioned config
 export const app: FirebaseApp = !getApps().length
-  ? initializeApp(firebaseConfig)
+  ? initializeApp(resolvedFirebaseConfig)
   : getApps()[0];
 
 // CRITICAL: The app uses the dedicated firestoreDatabaseId
-export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db: Firestore = getFirestore(app, resolvedFirebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 // Test connection on boot
