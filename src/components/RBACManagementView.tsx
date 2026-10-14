@@ -29,6 +29,7 @@ interface RBACManagementViewProps {
   onUpdateUsers: (users: UserProfile[]) => void;
   onRestoreRecord: (restoredRecord: MonthlyRecord) => void;
   onResetDatabase: () => void;
+  onOpenRegisterModal?: () => void;
 }
 
 export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
@@ -39,6 +40,7 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
   onUpdateUsers,
   onRestoreRecord,
   onResetDatabase,
+  onOpenRegisterModal,
 }) => {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [isAddMode, setIsAddMode] = useState(false);
@@ -185,10 +187,20 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
                   canManageUsers: false,
                 });
               }}
-              className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               เพิ่มผู้ใช้งานใหม่
+            </button>
+          )}
+
+          {onOpenRegisterModal && (
+            <button
+              onClick={onOpenRegisterModal}
+              className="px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-emerald-300 dark:border-emerald-800"
+            >
+              <Key className="w-3.5 h-3.5 text-emerald-600" />
+              ลงทะเบียนผ่าน Firebase Auth
             </button>
           )}
         </div>
@@ -266,12 +278,23 @@ export const RBACManagementView: React.FC<RBACManagementViewProps> = ({
 
       {/* User Directory Table */}
       <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-2">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Users className="w-4 h-4 text-slate-500" />
             รายชื่อผู้มีสิทธิ์ใช้งานระบบ (User Directory)
           </h3>
-          <span className="text-xs text-slate-500">{users.length} บัญชีผู้ใช้งาน</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">{users.length} บัญชีผู้ใช้งาน</span>
+            {onOpenRegisterModal && (
+              <button
+                onClick={onOpenRegisterModal}
+                className="px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg flex items-center gap-1 transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                สมัครสมาชิกใหม่
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

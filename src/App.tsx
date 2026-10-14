@@ -18,7 +18,18 @@ import { OfficialReportView } from './components/OfficialReportView';
 import { NotificationSystemView } from './components/NotificationSystemView';
 import { RBACManagementView } from './components/RBACManagementView';
 import { ReconciliationView } from './components/ReconciliationView';
-import { saveRecordToFirestore, subscribeToRecord, loadRecordFromFirestore } from './services/firebase';
+import { AuthModal } from './components/AuthModal';
+import {
+  saveRecordToFirestore,
+  subscribeToRecord,
+  loadRecordFromFirestore,
+  syncUserProfileToFirestore,
+  loadUsersFromFirestore,
+  getUserProfileFromFirestore,
+  logoutUser,
+  auth,
+} from './services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   LayoutDashboard,
   TableProperties,
@@ -34,7 +45,13 @@ import {
   ShieldCheck,
   Building,
   CheckCircle2,
-  Calendar
+  Calendar,
+  LogIn,
+  UserCheck,
+  LogOut,
+  UserPlus,
+  Database,
+  Sparkles,
 } from 'lucide-react';
 
 export default function App() {
@@ -42,6 +59,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'LEDGER' | 'REPORT' | 'NOTIFICATIONS' | 'RBAC' | 'RECONCILE'>('DASHBOARD');
   const [ledgerInitialFilter, setLedgerInitialFilter] = useState<'ALL' | 'GOV' | 'EXT' | 'OVERDUE'>('ALL');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<'LOGIN' | 'REGISTER' | 'FAST_SWITCH'>('LOGIN');
+
+  const openAuthModal = (tab: 'LOGIN' | 'REGISTER' | 'FAST_SWITCH' = 'LOGIN') => {
+    setAuthModalTab(tab);
+    setIsAuthModalOpen(true);
+  };
 
   // Dark mode state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -141,8 +165,35 @@ export default function App() {
         localStorage.setItem('skb_monthly_record', JSON.stringify(cloudRecord));
       }
     });
+
+    // Sync registered staff accounts from Cloud Firestore
+    loadUsersFromFirestore().then((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers((prev) => {
+          const map = new Map<string, UserProfile>();
+          prev.forEach((u) => map.set(u.id, u));
+          cloudUsers.forEach((u) => map.set(u.id, u));
+          const merged = Array.from(map.values());
+          localStorage.setItem('skb_users', JSON.stringify(merged));
+          return merged;
+        });
+      }
+    }).catch(() => {});
+
+    // Listen to Firebase Authentication state for session persistence
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        const profile = await getUserProfileFromFirestore(fbUser.uid);
+        if (profile) {
+          setCurrentUser(profile);
+          localStorage.setItem('skb_current_user_id', profile.id);
+        }
+      }
+    });
+
     return () => {
       if (unsub) unsub();
+      unsubAuth();
     };
   }, [record.id]);
 
@@ -154,6 +205,25 @@ export default function App() {
   const handleSwitchUser = (user: UserProfile) => {
     setCurrentUser(user);
     localStorage.setItem('skb_current_user_id', user.id);
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    const fallbackUser = users[2] || users[0] || INITIAL_USERS[2];
+    setCurrentUser(fallbackUser);
+    localStorage.setItem('skb_current_user_id', fallbackUser.id);
+  };
+
+  const handleLoginSuccess = (user: UserProfile) => {
+    setCurrentUser(user);
+    localStorage.setItem('skb_current_user_id', user.id);
+    const exists = users.find((u) => u.id === user.id);
+    if (!exists) {
+      const updated = [...users, user];
+      setUsers(updated);
+      localStorage.setItem('skb_users', JSON.stringify(updated));
+    }
+    syncUserProfileToFirestore(user);
   };
 
   const handleUpdateNotifSettings = (newSettings: NotificationSettings) => {
@@ -335,19 +405,39 @@ export default function App() {
               )}
             </button>
 
-            {/* Current User Quick Switcher Dropdown */}
-            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800 text-xs">
-              <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-[11px] shrink-0">
-                {currentUser.name.charAt(0)}
-              </div>
-              <div className="leading-tight">
-                <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[130px]">
-                  {currentUser.name}
-                </span>
-                <span className="text-[10px] text-slate-400 block line-clamp-1">
-                  {currentUser.roleTitleTh}
-                </span>
-              </div>
+            {/* User Profile & Auth Trigger */}
+            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => openAuthModal('LOGIN')}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                title="คลิกเพื่อเข้าสู่ระบบ หรือ สมัครสมาชิกเจ้าหน้าที่ใหม่"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>เข้าสู่ระบบ / สมัครสมาชิก</span>
+              </button>
+
+              <button
+                onClick={() => openAuthModal('FAST_SWITCH')}
+                className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-xs text-left transition-colors cursor-pointer group"
+                title="คลิกเพื่อสลับผู้ใช้งาน หรือดูโปรไฟล์"
+              >
+                <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-center text-[11px] shrink-0 group-hover:ring-2 group-hover:ring-emerald-500/30">
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="leading-tight">
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[110px]">
+                      {currentUser.name}
+                    </span>
+                    <span className="text-[10px] px-1 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                      {currentUser.role}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 block line-clamp-1">
+                    {currentUser.roleTitleTh}
+                  </span>
+                </div>
+              </button>
             </div>
           </div>
         </div>
@@ -417,8 +507,53 @@ export default function App() {
               เปรียบเทียบข้อมูล HIS
             </button>
 
+            {/* Mobile Auth Buttons */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
+                <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                  {currentUser.roleTitleTh}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    openAuthModal('LOGIN');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-700 text-white flex items-center justify-center gap-1.5 text-xs shadow-2xs"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  เข้าสู่ระบบ
+                </button>
+                <button
+                  onClick={() => {
+                    openAuthModal('REGISTER');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center gap-1.5 text-xs"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  สมัครสมาชิก
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  openAuthModal('FAST_SWITCH');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full text-left px-3 py-1.5 rounded-lg font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>สลับบทบาทจำลอง (Fast Switch)</span>
+                </span>
+                <span className="text-[10px] text-slate-400">4 บัญชี</span>
+              </button>
+            </div>
+
             {/* Mobile Dark Mode Toggle */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="pt-1">
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="w-full text-left px-3 py-2 rounded-lg font-medium bg-slate-50 dark:bg-slate-800 flex items-center justify-between"
@@ -484,6 +619,7 @@ export default function App() {
             onUpdateUsers={handleUpdateUsers}
             onRestoreRecord={handleUpdateRecord}
             onResetDatabase={handleResetDatabase}
+            onOpenRegisterModal={() => openAuthModal('REGISTER')}
           />
         )}
 
@@ -495,6 +631,16 @@ export default function App() {
         )}
       </main>
 
+      {/* Auth & Registration Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+        onLogout={handleLogout}
+        currentUser={currentUser}
+        initialUsers={users}
+        initialTab={authModalTab}
+      />
 
       {/* Footer */}
       <footer className="no-print mt-auto border-t border-slate-200 dark:border-slate-800 py-5 text-center text-xs text-slate-500">
