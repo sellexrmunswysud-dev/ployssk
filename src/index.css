@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    font-family: 'Sarabun', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #020617;
+  color: #f8fafc;
+}
+
+@keyframes urgent-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.08);
+  }
+}
+
+.animate-urgent {
+  animation: urgent-pulse 1.2s infinite ease-in-out;
+}
+
+/* Print CSS for standard hospital government report format */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm 10mm 10mm 10mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .print-table th,
+  .print-table td {
+    border: 1px solid #1f2937 !important;
+    padding: 3px 6px !important;
+    font-size: 9.5pt !important;
+  }
+
+  .print-table th {
+    background-color: #f3f4f6 !important;
+  }
+}
+
+@media screen {
+  .print-only {
+    display: none;
+  }
+}

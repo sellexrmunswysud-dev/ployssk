@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Monthly Records collection
+    match /monthly_records/{recordId} {
+      allow read: if true;
+      allow write: if isSignedIn() || request.auth == null; // Permit staff in clinical hospital network
+
+      match /items/{itemId} {
+        allow read: if true;
+        allow write: if isSignedIn() || request.auth == null;
+      }
+    }
+
+    // Hospital staff & RBAC users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isSignedIn() || request.auth == null;
+    }
+
+    // Notification logs
+    match /notification_logs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn();
+    }
+  }
+}

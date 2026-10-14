@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "MonthlyRecord": {
+      "title": "MonthlyRecord",
+      "description": "ทะเบียนคุมลูกหนี้ทางการแพทย์ 52 สิทธิ์ ประจำเดือน รพ.สังขละบุรี",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "รหัสเอกสารประจำงวด เช่น skb-record-2569-08" },
+        "year": { "type": "number", "description": "ปี พ.ศ. เช่น 2569" },
+        "month": { "type": "number", "description": "ลำดับเดือน 1-12" },
+        "monthName": { "type": "string", "description": "ชื่อเดือนภาษาไทย เช่น สิงหาคม" },
+        "status": { "type": "string", "enum": ["DRAFT", "REVIEWED", "APPROVED"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "year", "month", "monthName", "status"]
+    },
+    "RightsItem": {
+      "title": "RightsItem",
+      "description": "รายการลูกหนี้แต่ละสิทธิการรักษาพยาบาล (52 สิทธิ์)",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "รหัสบัญชีลูกหนี้ เช่น 1102050101.102" },
+        "name": { "type": "string", "description": "ชื่อสิทธิการรักษาพยาบาล" },
+        "category": { "type": "string", "enum": ["GOVERNMENT", "EXTERNAL"] },
+        "subGroup": { "type": "string" },
+        "initialBalance": { "type": "number" },
+        "newDebt": { "type": "number" },
+        "paymentReceived": { "type": "number" },
+        "badDebtWrittenOff": { "type": "number" },
+        "endingBalance": { "type": "number" },
+        "daysOverdue": { "type": "number" },
+        "notes": { "type": "string" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["code", "name", "category", "initialBalance", "newDebt", "paymentReceived", "endingBalance"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "ข้อมูลผู้ใช้งานและสิทธิ์การเข้าถึง (RBAC)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["EXECUTIVE", "STATISTICIAN", "ACCOUNTANT", "ADMIN"] },
+        "roleTitleTh": { "type": "string" },
+        "department": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "role", "email"]
+    },
+    "NotificationLog": {
+      "title": "NotificationLog",
+      "description": "ประวัติการส่งแจ้งเตือน SMS/Email",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "channel": { "type": "string", "enum": ["SMS", "EMAIL"] },
+        "recipientName": { "type": "string" },
+        "recipientTarget": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["DELIVERED", "PENDING", "FAILED"] },
+        "triggerEvent": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "channel", "recipientName", "recipientTarget", "status"]
+    }
+  },
+  "firestore": {
+    "/monthly_records/{recordId}": {
+      "schema": "MonthlyRecord",
+      "description": "เอกสารสรุปทะเบียนคุมลูกหนี้รายเดือน"
+    },
+    "/monthly_records/{recordId}/items/{itemId}": {
+      "schema": "RightsItem",
+      "description": "รายการลูกหนี้ 52 สิทธิ์ภายใต้งวดบัญชี"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "ข้อมูลผู้ใช้งานระบบและบทบาทสิทธิ์"
+    },
+    "/notification_logs/{logId}": {
+      "schema": "NotificationLog",
+      "description": "ประวัติการแจ้งเตือน SMS และ Email"
+    }
+  }
+}
