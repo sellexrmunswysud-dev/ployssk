@@ -19,6 +19,7 @@ import { NotificationSystemView } from './components/NotificationSystemView';
 import { RBACManagementView } from './components/RBACManagementView';
 import { ReconciliationView } from './components/ReconciliationView';
 import { AuthModal } from './components/AuthModal';
+import { LoginPortal } from './components/LoginPortal';
 import {
   saveRecordToFirestore,
   subscribeToRecord,
@@ -139,6 +140,11 @@ export default function App() {
     return null;
   });
 
+  // State to check session before rendering web app
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(() => {
+    return !!localStorage.getItem('skb_current_user_id');
+  });
+
   const [notifSettings, setNotifSettings] = useState<NotificationSettings>(() => {
     const saved = localStorage.getItem('skb_notif_settings');
     if (saved) {
@@ -221,18 +227,29 @@ export default function App() {
 
     // Listen to Firebase Authentication state for session persistence
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        const profile = await getUserProfileFromFirestore(fbUser.uid);
-        if (profile) {
-          setCurrentUser(profile);
-          localStorage.setItem('skb_current_user_id', profile.id);
+      try {
+        if (fbUser) {
+          const profile = await getUserProfileFromFirestore(fbUser.uid);
+          if (profile) {
+            setCurrentUser(profile);
+            localStorage.setItem('skb_current_user_id', profile.id);
+          }
         }
+      } catch (e) {
+        console.warn('Auth state sync notice:', e);
+      } finally {
+        setIsAuthChecking(false);
       }
     });
+
+    const fallbackTimer = setTimeout(() => {
+      setIsAuthChecking(false);
+    }, 800);
 
     return () => {
       if (unsub) unsub();
       unsubAuth();
+      clearTimeout(fallbackTimer);
     };
   }, [record.id]);
 
@@ -302,6 +319,36 @@ export default function App() {
     }
     setActiveTab('LEDGER');
   };
+
+  // 1. Session verification loading screen
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <SangkhlaburiLogo size={56} className="w-14 h-14 animate-pulse" />
+          <div className="text-center">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              โรงพยาบาลสังขละบุรี จังหวัดกาญจนบุรี
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              กำลังตรวจสอบการเข้าสู่ระบบ...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. REQUIRED: Login/Registration Portal BEFORE accessing the web application
+  if (!currentUser) {
+    return (
+      <LoginPortal
+        onLoginSuccess={handleLoginSuccess}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col antialiased">
@@ -443,58 +490,47 @@ export default function App() {
               )}
             </button>
 
-            {/* User Profile & Auth Trigger */}
+            {/* User Profile & Auth Actions */}
             <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800">
-              {currentUser ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-750 text-xs text-left">
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0 shadow-2xs">
-                      {currentUser.name.charAt(0)}
-                    </div>
-                    <div className="leading-tight">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[120px]">
-                          {currentUser.name}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                          {currentUser.role}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 block line-clamp-1">
-                        {currentUser.roleTitleTh}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-750 text-xs text-left">
+                  <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0 shadow-2xs">
+                    {currentUser.name.charAt(0)}
+                  </div>
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 block line-clamp-1 max-w-[120px]">
+                        {currentUser.name}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                        {currentUser.role}
                       </span>
                     </div>
+                    <span className="text-[10px] text-slate-400 block line-clamp-1">
+                      {currentUser.roleTitleTh}
+                    </span>
                   </div>
-
-                  <button
-                    onClick={handleLogout}
-                    title="ออกจากระบบ"
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openAuthModal('LOGIN')}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="เข้าสู่ระบบ"
-                  >
-                    <LogIn className="w-3.5 h-3.5 text-slate-500" />
-                    <span>เข้าสู่ระบบ</span>
-                  </button>
 
+                {currentUser.canManageUsers && (
                   <button
                     onClick={() => openAuthModal('REGISTER')}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    title="สมัครสมาชิกใหม่"
+                    title="ลงทะเบียนเจ้าหน้าที่เพิ่ม"
+                    className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
                   >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>สมัครสมาชิกใหม่</span>
+                    <UserPlus className="w-4 h-4" />
                   </button>
-                </div>
-              )}
+                )}
+
+                <button
+                  onClick={handleLogout}
+                  title="ออกจากระบบ"
+                  className="px-2.5 py-1.5 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">ออกจากระบบ</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -564,51 +600,40 @@ export default function App() {
               เปรียบเทียบข้อมูล HIS
             </button>
 
-            {/* Mobile Auth Buttons */}
+            {/* Mobile Auth Actions */}
             <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              {currentUser ? (
-                <div className="space-y-2">
-                  <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
-                    <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
-                      {currentUser.roleTitleTh}
-                    </span>
-                  </div>
+              <div className="space-y-2">
+                <div className="px-1 text-[11px] text-slate-500 flex items-center justify-between">
+                  <span>ผู้ใช้งาน: <strong className="text-slate-800 dark:text-slate-200">{currentUser.name}</strong></span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                    {currentUser.roleTitleTh}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  {currentUser.canManageUsers && (
+                    <button
+                      onClick={() => {
+                        openAuthModal('REGISTER');
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className="flex-1 py-2 px-2.5 rounded-lg font-semibold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      ลงทะเบียนเพิ่ม
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       handleLogout();
                       setIsMobileMenuOpen(false);
                     }}
-                    className="w-full text-center py-2 px-3 rounded-lg font-semibold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
+                    className="flex-1 text-center py-2 px-3 rounded-lg font-semibold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 flex items-center justify-center gap-1.5 text-xs cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     ออกจากระบบ
                   </button>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      openAuthModal('LOGIN');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full text-center py-2 px-2.5 rounded-lg font-semibold border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 text-xs shadow-2xs cursor-pointer"
-                  >
-                    <LogIn className="w-3.5 h-3.5" />
-                    เข้าสู่ระบบ
-                  </button>
-                  <button
-                    onClick={() => {
-                      openAuthModal('REGISTER');
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full text-center py-2 px-2.5 rounded-lg font-semibold bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-1.5 text-xs shadow-2xs cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    สมัครสมาชิก
-                  </button>
-                </div>
-              )}
+              </div>
             </div>
 
             {/* Mobile Dark Mode Toggle */}
